@@ -5,6 +5,7 @@ import json
 import sys
 
 from .adapters import from_jsonl
+from .claims import DEFAULT_SCAN_LIMITS, ScanLimits
 from .witness import Divergence, DivergenceKind, check
 
 
@@ -26,8 +27,14 @@ def _check(args: argparse.Namespace) -> int:
         print(f"cannot read audit trail: {err}", file=sys.stderr)
         return 1
 
-    narration = _read_narration(args)
-    divergences = check(narration, records)
+    try:
+        narration = _read_narration(args)
+    except OSError as err:
+        print(f"cannot read narration: {err}", file=sys.stderr)
+        return 1
+
+    limits = ScanLimits(max_narration_chars=args.max_narration_chars)
+    divergences = check(narration, records, limits)
 
     if args.json:
         print(json.dumps({"divergences": [_as_dict(d) for d in divergences]}, indent=2))
@@ -71,6 +78,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="file holding the agent's narration text; if omitted, read narration from stdin",
     )
     check_cmd.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    check_cmd.add_argument(
+        "--max-narration-chars",
+        type=int,
+        default=DEFAULT_SCAN_LIMITS.max_narration_chars,
+        help="reject narration longer than this many characters (fails closed as unverifiable)",
+    )
     check_cmd.set_defaults(func=_check)
 
     return parser
