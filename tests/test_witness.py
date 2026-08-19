@@ -70,3 +70,63 @@ def test_duplicate_claims_both_flag_when_unmatched():
     narration = '{"name": "exec", "parameters": {"command": "a"}} {"name": "exec", "parameters": {"command": "b"}}'
     divergences = check(narration, records=[])
     assert len(divergences) == 2
+
+
+def test_two_claims_with_one_execution_flags_the_unbacked_one():
+    narration = '{"name": "exec", "parameters": {"command": "a"}} {"name": "exec", "parameters": {"command": "b"}}'
+    divergences = check(narration, records=[executed("exec", command="a")])
+    assert len(divergences) == 1
+    assert divergences[0].tool == "exec"
+    assert divergences[0].kind is DivergenceKind.UNVERIFIED_CLAIM
+
+
+def test_two_claims_with_two_executions_are_both_cleared():
+    narration = '{"name": "exec", "parameters": {"command": "a"}} {"name": "exec", "parameters": {"command": "b"}}'
+    divergences = check(narration, records=[executed("exec", command="a"), executed("exec", command="b")])
+    assert divergences == []
+
+
+def test_three_claims_with_two_executions_flag_only_the_third():
+    narration = (
+        '{"name": "exec", "parameters": {}} {"name": "exec", "parameters": {}} {"name": "exec", "parameters": {}}'
+    )
+    divergences = check(narration, records=[executed("exec"), executed("exec")])
+    assert len(divergences) == 1
+
+
+def test_claim_with_surrounding_whitespace_matches_clean_record():
+    narration = '{"name": " exec ", "parameters": {"command": "ls"}}'
+    divergences = check(narration, records=[executed("exec", command="ls")])
+    assert divergences == []
+
+
+def test_record_with_surrounding_whitespace_matches_clean_claim():
+    narration = '{"name": "exec", "parameters": {"command": "ls"}}'
+    divergences = check(narration, records=[executed(" exec ", command="ls")])
+    assert divergences == []
+
+
+def test_nfd_claim_matches_nfc_record():
+    import unicodedata
+
+    name = "cafe\u0301"
+    nfc = unicodedata.normalize("NFC", name)
+    nfd = unicodedata.normalize("NFD", name)
+    assert nfc != nfd
+    narration = '{"name": "' + nfd + '", "parameters": {}}'
+    divergences = check(narration, records=[executed(nfc)])
+    assert divergences == []
+
+
+def test_case_difference_is_a_real_divergence():
+    narration = '{"name": "EXEC", "parameters": {}}'
+    divergences = check(narration, records=[executed("exec")])
+    assert len(divergences) == 1
+    assert divergences[0].tool == "EXEC"
+
+
+def test_overly_nested_narration_fails_closed_as_unverifiable():
+    narration = '{"x":' * 500 + "0" + "}" * 500
+    divergences = check(narration, records=[])
+    assert len(divergences) == 1
+    assert divergences[0].kind is DivergenceKind.UNVERIFIABLE
