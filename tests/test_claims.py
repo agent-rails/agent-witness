@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from agent_witness import extract_claims
+import pytest
+
+from agent_witness import ScanLimits, extract_claims
+from agent_witness.claims import NarrationTooComplexError
 
 
 def test_whole_string_json_envelope_is_extracted():
@@ -48,3 +51,66 @@ def test_type_function_without_parameters_is_still_a_claim():
     assert len(claims) == 1
     assert claims[0].tool == "noop"
     assert claims[0].args == {}
+
+
+def test_envelope_nested_in_wrapper_object_is_extracted():
+    claims = extract_claims('{"wrapper":{"type":"function","name":"exec","parameters":{"command":"ls"}}}')
+    assert len(claims) == 1
+    assert claims[0].tool == "exec"
+    assert claims[0].args == {"command": "ls"}
+
+
+def test_envelope_nested_in_array_is_extracted():
+    claims = extract_claims('{"items":[{"name":"exec","arguments":{"command":"ls"}}]}')
+    assert len(claims) == 1
+    assert claims[0].tool == "exec"
+    assert claims[0].args == {"command": "ls"}
+
+
+def test_unterminated_quote_before_envelope_does_not_hide_it():
+    claims = extract_claims('prose " never closed {"name":"exec","parameters":{}}')
+    assert len(claims) == 1
+    assert claims[0].tool == "exec"
+
+
+def test_stray_open_brace_before_envelope_does_not_hide_it():
+    claims = extract_claims('prose { then {"name":"exec","parameters":{}}')
+    assert len(claims) == 1
+    assert claims[0].tool == "exec"
+
+
+def test_stray_close_brace_before_envelope_does_not_hide_it():
+    claims = extract_claims('prose } then {"name":"exec","parameters":{}}')
+    assert len(claims) == 1
+    assert claims[0].tool == "exec"
+
+
+def test_envelope_a_few_levels_deep_is_still_extracted():
+    claims = extract_claims('{"a":{"b":{"c":{"name":"exec","parameters":{"command":"ls"}}}}}')
+    assert len(claims) == 1
+    assert claims[0].tool == "exec"
+
+
+def test_deeply_nested_input_fails_closed_not_a_crash():
+    depth = 500
+    narration = '{"x":' * depth + "0" + "}" * depth
+    with pytest.raises(NarrationTooComplexError):
+        extract_claims(narration)
+
+
+def test_c_decoder_recursion_error_is_translated_to_fail_closed():
+    depth = 50_000
+    narration = '{"x":' * depth + "0" + "}" * depth
+    with pytest.raises(NarrationTooComplexError):
+        extract_claims(narration, ScanLimits(max_depth=depth + 1))
+
+
+def test_oversized_narration_fails_closed():
+    limits = ScanLimits(max_narration_chars=100)
+    with pytest.raises(NarrationTooComplexError):
+        extract_claims("x" * 101, limits)
+
+
+def test_two_sequential_envelopes_are_both_extracted():
+    claims = extract_claims('{"name":"exec","parameters":{"command":"a"}} {"name":"exec","parameters":{"command":"b"}}')
+    assert len(claims) == 2
