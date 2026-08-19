@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+audit*.jsonl
+.venv/
+dist/
+build/
+.env
+.ruff_cache/
+.claude/worktrees/
