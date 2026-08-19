@@ -94,3 +94,24 @@ def test_from_jsonl_fails_closed_on_missing_tool_field(tmp_path):
     path.write_text('{"args": {}, "executed": true}\n', encoding="utf-8")
     with pytest.raises(ValueError, match="'tool' field"):
         from_jsonl(path)
+
+
+def test_from_jsonl_rejects_duplicate_keys(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    path.write_text('{"tool":"exec","args":{},"executed":false,"executed":true}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="duplicate key"):
+        from_jsonl(path)
+
+
+def test_from_jsonl_accepts_missing_args_as_empty(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    path.write_text('{"tool":"exec","executed":true}\n', encoding="utf-8")
+    records = from_jsonl(path)
+    assert records == [ExecutionRecord(tool="exec", args={}, executed=True)]
+
+
+def test_from_jsonl_rejects_present_non_object_args(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    path.write_text('{"tool":"exec","args":"ls","executed":true}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="non-object 'args'"):
+        from_jsonl(path)

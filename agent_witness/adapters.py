@@ -8,6 +8,21 @@ from typing import Any, Protocol
 from .witness import ExecutionRecord
 
 
+class DuplicateAuditKeyError(ValueError):
+    """A JSON audit record carried the same key twice. Raised rather than silently keeping
+    the last value, because last-wins could flip a record's `executed` status and clear a
+    real divergence — the trusted ground-truth side must fail closed on contradiction."""
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    seen: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in seen:
+            raise DuplicateAuditKeyError(f"duplicate key '{key}'")
+        seen[key] = value
+    return seen
+
+
 class AuditRecordLike(Protocol):
     tool: str
     args: dict[str, Any]
@@ -45,7 +60,9 @@ def from_jsonl(path: str | Path) -> list[ExecutionRecord]:
 
 def _record_from_line(line: str, path: Path, lineno: int) -> ExecutionRecord:
     try:
-        payload = json.loads(line)
+        payload = json.loads(line, object_pairs_hook=_reject_duplicate_keys)
+    except DuplicateAuditKeyError as err:
+        raise ValueError(f"audit record on line {lineno} of {path} has a duplicate key: {err}") from err
     except json.JSONDecodeError as err:
         raise ValueError(f"malformed audit record on line {lineno} of {path}: {err}") from err
 
@@ -60,8 +77,11 @@ def _record_from_line(line: str, path: Path, lineno: int) -> ExecutionRecord:
     if not isinstance(executed, bool):
         raise ValueError(f"audit record on line {lineno} of {path} has no boolean 'executed' field")
 
-    args = payload.get("args")
-    if not isinstance(args, dict):
-        args = {}
+    if "args" not in payload:
+        args: dict[str, Any] = {}
+    else:
+        args = payload["args"]
+        if not isinstance(args, dict):
+            raise ValueError(f"audit record on line {lineno} of {path} has a non-object 'args' field")
 
     return ExecutionRecord(tool=tool, args=args, executed=executed)
