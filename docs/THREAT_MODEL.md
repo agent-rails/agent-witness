@@ -58,6 +58,13 @@ narration* check, run after the fact, off an existing record.
 - **Args-level fidelity.** v1 matches a claim to a record by tool name and execution status,
   not by argument equality. A claim naming a tool that did execute is treated as verified even
   if the narrated args differ from what ran. Argument-level reconciliation is deferred.
+- **Unbounded resource exhaustion.** Narration is untrusted, so the scanner bounds every
+  dimension a hostile author could inflate — total size, candidate count, nesting depth, node
+  count — via `ScanLimits` (configurable by library callers, `--max-narration-chars` on the
+  CLI). Exceeding a limit fails closed as `UNVERIFIABLE`, never a silent empty result or an
+  escaping crash. What it does not promise is a tuned ceiling for every deployment: the
+  defaults are sane, not calibrated to your host — a caller feeding multi-megabyte narration
+  should set its own limits.
 
 ## Positioning against standards
 
